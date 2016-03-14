@@ -27,3 +27,8 @@ requires:
 peers:
   cluster:
     interface: git
+resources:
+  gitlab-src:
+    type: file
+    filename: gitlab.tar.gz
+    description: Gitlab source release
