@@ -1,5 +1,33 @@
-includes: ['layer:basic', 'interface:http']
+includes:
+  - 'layer:basic'
+  - 'layer:nginx'
+  - 'interface:http'
+  - 'interface:git'
+  - 'interface:gitlab'
+  - 'interface:redis'
+  - 'interface:psql'
 options:
   basic:
     packages:
       - apt-transport-https
+      - git-core
+      - build-essential
+      - zlib1g-dev
+      - libyaml-dev
+      - libssl-dev
+      - libgdbm-dev
+      - libreadline-dev
+      - libncurses5-dev
+      - libffi-dev
+      - curl
+      - openssh-server
+      - checkinstall
+      - libxml2-dev
+      - libxslt-dev
+      - libcurl4-openssl-dev
+      - libicu-dev
+      - logrotate
+      - python-docutils
+      - pkg-config
+      - cmake
+      - nodejs

@@ -13,5 +13,17 @@ series:
   - wily
   - xenial
 provides:
-    website:
-      interface: http
+  website:
+    interface: http
+  git-server:
+    interface: git
+  server:
+    interface: gitlab
+requires:
+  database:
+    interface: pgsql
+  kv:
+    interface: redis
+peers:
+  cluster:
+    interface: git
