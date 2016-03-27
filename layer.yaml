@@ -31,3 +31,6 @@ options:
       - pkg-config
       - cmake
       - nodejs
+      - postfix
+      - postgresql-client
+      - libpq-dev
