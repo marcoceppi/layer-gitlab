@@ -1,14 +1,100 @@
-import fileinput
-import sys
-from charmhelpers.fetch import apt_install
-from charms.reactive import when, when_not, set_state, remove_state, hook
-from subprocess import check_call, CalledProcessError, call
-from charmhelpers.core import hookenv
-from charmhelpers.core.hookenv import status_set
-from charms.reactive.helpers import data_changed
+
+from charms.reactive import (
+    when,
+    when_not,
+    set_state,
+    remove_state,
+)
+
+from charmhelpers.core.hookenv import (
+    status_set,
+    config,
+    open_port,
+    log,
+    resource_get,
+)
+
+from charms.layer import Gitlab
+
+
+gitlab = Gitlab('production')
+
+
+@when_not('gitlab.installed')
+def install():
+    pass
+
+
+@when('gitlab.installed')
+@when('database.database.available')
+@when_not('gitlab.psql.configured')
+def configure_psql(pgsql):
+    db_cfg = {
+        'adapter': 'postgresql',
+        'encoding': 'unicode',
+        'database': pgsql.database(),
+        'pool': 10
+        'username': pgsql.user(),
+        'password': pgsql.password(),
+        'host': pgsql.host(),
+        'port': pgsql.port(),
+    }
+
+    gitlab.configure_db(
+        database=pgsql.database(),
+        username=pgsql.user(),
+        password=pgsql.password(),
+        host=pgsql.host(),
+        port=pgsql.port(),
+    )
+
+    set_state('gitlab.psql.configured')
+
+
+@when('gitlab.installed')
+@when('kv.available')
+@when_not('gitlab.redis.configured')
+def configure_redis(redis)
+    gitlab.configure_resque(redis.connection_string())
+
+    set_state('gitlab.redis.configured')
+
+
+
+
+
+
+
+
+
+
+
 import re
+import sys
 import shutil
-from charmhelpers.core.hookenv import log
+import fileinput
+
+from charms.reactive import (
+    when,
+    when_not,
+    set_state,
+    remove_state,
+    hook,
+)
+
+from subprocess import check_call, CalledProcessError, call
+
+from charmhelpers.core.hookenv import (
+    status_set,
+    config,
+    open_port,
+    log,
+)
+
+from charms.reactive.helpers import data_changed
+from charms.layer import Gitlab
+
+
 
 filepath = '/etc/gitlab/gitlab.rb'
 
@@ -38,35 +124,22 @@ def unconfigure_website(website):
 
 @when_not('gitlab.installed')
 def install():
-    status_set('maintenance', 'Installing GitLab')
-    apt_install(["curl", "openssh-server", "ca-certificates", "postfix"])
+    status_set('maintenance', 'installing GitLab')
 
-    check_call(['apt-key', 'add', './data/gitlab_gpg.key'])
-
-    shutil.copy2('data/gitlab_gitlab-ce.list', '/etc/apt/sources.list.d/gitlab-ce.list')
-
-    check_call(['apt-get', 'update'])
-
-    version = ''
-    if hookenv.config('gitlab_version'):
-        version = '=' + hookenv.config('gitlab_version')
-
-    check_call(['apt-get', 'install', 'gitlab-ce' + version])
-    check_call(['gitlab-ctl', 'reconfigure'])
     set_state('gitlab.installed')
     status_set('active', 'GitLab is ready!')
 
 
 @when('gitlab.installed')
 def check_running():
-    if data_changed('gitlab.config', hookenv.config()):
+    if data_changed('gitlab.config', config()):
         status_set('maintenance', 'Updating Config')
-        updateConfig(hookenv.config())
+        updateConfig(config())
 
-    if hookenv.config('http_port'):
-        hookenv.open_port(hookenv.config('http_port'))
+    if config('http_port'):
+        open_port(config('http_port'))
     else:
-        hookenv.open_port(80)
+        open_port(80)
 
     status_set('active', 'GitLab is ready!')
 
@@ -74,45 +147,45 @@ def check_running():
 def updateConfig(config):
     exturl = None
 
-    if hookenv.config('external_url'):
-        exturl = hookenv.config('external_url')
+    if config.get('external_url'):
+        exturl = config.get('external_url')
         if not exturl.startswith("http"):
             exturl = "http://" + exturl
 
-    if hookenv.config('external_url') and hookenv.config('http_port'):
+    if config.get('external_url') and config.get('http_port'):
         if exturl.endswith("/"):
             exturl = exturl[:-1]
 
-        exturl = exturl + ":" + hookenv.config('http_port')
+        exturl = exturl + ":" + config.get('http_port')
 
     modConfigNoEquals(filepath, 'external_url', exturl)
-    modConfig(filepath, 'gitlab_rails[\'gitlab_ssh_host\']', hookenv.config('ssh_host'))
-    modConfig(filepath, 'gitlab_rails[\'time_zone\']', hookenv.config('time_zone'))
-    modConfig(filepath, 'gitlab_rails[\'gitlab_email_from\']', hookenv.config('email_from'))
-    modConfig(filepath, 'gitlab_rails[\'gitlab_email_display_name\']', hookenv.config('from_email_name'))
-    modConfig(filepath, 'gitlab_rails[\'gitlab_email_reply_to\']', hookenv.config('reply_to_email'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_enable\']', hookenv.config('smtp_enable'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_address\']', hookenv.config('smtp_address'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_port\']', hookenv.config('smtp_port'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_user_name\']', hookenv.config('smtp_user_name'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_password\']', hookenv.config('smtp_password'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_domain\']', hookenv.config('smtp_domain'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_enable_starttls_auto\']', hookenv.config('smtp_enable_starttls_auto'))
-    modConfig(filepath, 'gitlab_rails[\'smtp_tls\']', hookenv.config('smtp_tls'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_enabled\']', hookenv.config('incoming_email_enabled'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_address\']', hookenv.config('incoming_email_address'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_email\']', hookenv.config('incoming_email_email'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_password\']', hookenv.config('incoming_email_password'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_host\']', hookenv.config('incoming_email_host'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_port\']', hookenv.config('incoming_email_port'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_ssl\']', hookenv.config('incoming_email_ssl'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_start_tls\']', hookenv.config('incoming_email_start_tls'))
-    modConfig(filepath, 'gitlab_rails[\'incoming_email_mailbox_name\']', hookenv.config('incoming_email_mailbox_name'))
-    modConfig(filepath, 'gitlab_rails[\'backup_path\']', hookenv.config('backup_path'))
-    modConfig(filepath, 'gitlab_rails[\'backup_keep_time\']', hookenv.config('backup_keep_time'))
+    modConfig(filepath, 'gitlab_rails[\'gitlab_ssh_host\']', config.get('ssh_host'))
+    modConfig(filepath, 'gitlab_rails[\'time_zone\']', config.get('time_zone'))
+    modConfig(filepath, 'gitlab_rails[\'gitlab_email_from\']', config.get('email_from'))
+    modConfig(filepath, 'gitlab_rails[\'gitlab_email_display_name\']', config.get('from_email_name'))
+    modConfig(filepath, 'gitlab_rails[\'gitlab_email_reply_to\']', config.get('reply_to_email'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_enable\']', config.get('smtp_enable'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_address\']', config.get('smtp_address'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_port\']', config.get('smtp_port'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_user_name\']', config.get('smtp_user_name'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_password\']', config.get('smtp_password'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_domain\']', config.get('smtp_domain'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_enable_starttls_auto\']', config.get('smtp_enable_starttls_auto'))
+    modConfig(filepath, 'gitlab_rails[\'smtp_tls\']', config.get('smtp_tls'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_enabled\']', config.get('incoming_email_enabled'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_address\']', config.get('incoming_email_address'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_email\']', config.get('incoming_email_email'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_password\']', config.get('incoming_email_password'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_host\']', config.get('incoming_email_host'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_port\']', config.get('incoming_email_port'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_ssl\']', config.get('incoming_email_ssl'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_start_tls\']', config.get('incoming_email_start_tls'))
+    modConfig(filepath, 'gitlab_rails[\'incoming_email_mailbox_name\']', config.get('incoming_email_mailbox_name'))
+    modConfig(filepath, 'gitlab_rails[\'backup_path\']', config.get('backup_path'))
+    modConfig(filepath, 'gitlab_rails[\'backup_keep_time\']', config.get('backup_keep_time'))
     modConfig(filepath, 'gitlab_rails[\'backup_upload_remote_directory\']',
-              hookenv.config('backup_upload_remote_directory'))
-    modConfig(filepath, 'gitlab_rails[\'backup_upload_connection\']', hookenv.config('backup_upload_connection'))
+              config.get('backup_upload_remote_directory'))
+    modConfig(filepath, 'gitlab_rails[\'backup_upload_connection\']', config.get('backup_upload_connection'))
 
     check_call(["gitlab-ctl", "reconfigure"])
 
