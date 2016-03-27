@@ -24,6 +24,8 @@ requires:
     interface: pgsql
   kv:
     interface: redis
+  mail:
+    interface: mta
 peers:
   cluster:
     interface: git
